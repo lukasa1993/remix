@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type esbuild from "esbuild";
-import generate from "@babel/generator";
 
 import { routeModuleExts } from "../../../config/routesConvention";
 import * as Transform from "../../../transform";

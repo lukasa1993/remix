@@ -1,17 +1,12 @@
 import type { CookieParseOptions, CookieSerializeOptions } from "cookie";
 import { parse, serialize } from "cookie";
+import jose from "jose";
 
-import type {
-  DecryptFunction,
-  EncryptFunction,
-  SignFunction,
-  UnsignFunction,
-} from "./crypto";
 import { warnOnce } from "./warnings";
 
 export type { CookieParseOptions, CookieSerializeOptions };
 
-export interface CookieSignatureOptions {
+export interface CookieSecureOptions {
   /**
    * An array of secrets that may be used to sign/unsign the value of a cookie.
    *
@@ -21,13 +16,12 @@ export interface CookieSignatureOptions {
    * cookies that were signed with older secrets still work.
    */
   secrets?: string[];
-
-  encryptionKey?: string;
+  encrypt?: boolean;
 }
 
 export type CookieOptions = CookieParseOptions &
   CookieSerializeOptions &
-  CookieSignatureOptions;
+  CookieSecureOptions;
 
 /**
  * A HTTP cookie.
@@ -85,21 +79,11 @@ export type CreateCookieFunction = (
  * @see https://remix.run/utils/cookies#createcookie
  */
 export const createCookieFactory =
-  ({
-    sign,
-    unsign,
-    encrypt,
-    decrypt,
-  }: {
-    sign: SignFunction;
-    unsign: UnsignFunction;
-    encrypt?: EncryptFunction;
-    decrypt?: DecryptFunction;
-  }): CreateCookieFunction =>
+  (): CreateCookieFunction =>
   (name, cookieOptions = {}) => {
     let {
       secrets = [],
-      encryptionKey,
+      encrypt = false,
       ...options
     } = {
       path: "/",
@@ -128,27 +112,13 @@ export const createCookieFactory =
         return name in cookies
           ? cookies[name] === ""
             ? ""
-            : await decodeCookieValue(
-                unsign,
-                cookies[name],
-                secrets,
-                decrypt,
-                encryptionKey
-              )
+            : await decodeCookieValue(cookies[name], secrets, encrypt)
           : null;
       },
       async serialize(value, serializeOptions) {
         return serialize(
           name,
-          value === ""
-            ? ""
-            : await encodeCookieValue(
-                sign,
-                value,
-                secrets,
-                encrypt,
-                encryptionKey
-              ),
+          value === "" ? "" : await encodeCookieValue(value, secrets, encrypt),
           {
             ...options,
             ...serializeOptions,
@@ -176,126 +146,59 @@ export const isCookie: IsCookieFunction = (object): object is Cookie => {
 };
 
 async function encodeCookieValue(
-  sign: SignFunction,
   value: any,
   secrets: string[],
-  encrypt?: EncryptFunction,
-  encryptionKey?: string
+  encrypt?: boolean
 ): Promise<string> {
-  let encoded = encodeData(value);
-
-  if (encryptionKey && encrypt) {
-    encoded = await encrypt(encoded, encryptionKey);
-  }
+  let encoded;
 
   if (secrets.length > 0) {
-    encoded = await sign(encoded, secrets[0]);
+    if (encrypt) {
+      encoded = await new jose.EncryptJWT(value)
+        .setProtectedHeader({ alg: "PBES2-HS512+A256KW", enc: "A256GCM" })
+        .setIssuedAt()
+        .encrypt(new TextEncoder().encode(secrets[0]));
+    } else {
+      encoded = await new jose.SignJWT(value)
+        .setProtectedHeader({ alg: "PBES2-HS512+A256KW", enc: "A256GCM" })
+        .setIssuedAt()
+        .sign(new TextEncoder().encode(secrets[0]));
+    }
+  } else {
+    encoded = new jose.UnsecuredJWT(value).setIssuedAt().encode();
   }
 
   return encoded;
 }
 
 async function decodeCookieValue(
-  unsign: UnsignFunction,
   value: string,
   secrets: string[],
-  decrypt?: DecryptFunction,
-  decryptionKey?: string
+  decrypt: boolean
 ): Promise<any> {
-  let tryDecrypt = async (cipher: string) => {
-    let decrypted = cipher;
-    if (decryptionKey && decrypt) {
-      let payload = await decrypt(cipher, decryptionKey);
-      if (payload) {
-        decrypted = payload;
-      }
-    }
-
-    return decrypted;
-  };
-
   if (secrets.length > 0) {
     for (let secret of secrets) {
-      let unsignedValue = await unsign(value, secret);
-      if (unsignedValue !== false) {
-        return decodeData(await tryDecrypt(unsignedValue));
-      }
-    }
-
-    return null;
-  }
-
-  return decodeData(await tryDecrypt(value));
-}
-
-function encodeData(value: any): string {
-  return btoa(myUnescape(encodeURIComponent(JSON.stringify(value))));
-}
-
-function decodeData(value: string): any {
-  try {
-    return JSON.parse(decodeURIComponent(myEscape(atob(value))));
-  } catch (error: unknown) {
-    return {};
-  }
-}
-
-// See: https://github.com/zloirock/core-js/blob/master/packages/core-js/modules/es.escape.js
-function myEscape(value: string): string {
-  let str = value.toString();
-  let result = "";
-  let index = 0;
-  let chr, code;
-  while (index < str.length) {
-    chr = str.charAt(index++);
-    if (/[\w*+\-./@]/.exec(chr)) {
-      result += chr;
-    } else {
-      code = chr.charCodeAt(0);
-      if (code < 256) {
-        result += "%" + hex(code, 2);
+      if (decrypt) {
+        try {
+          let { payload: unsignedValue } = await jose.jwtDecrypt(
+            value,
+            new TextEncoder().encode(secret)
+          );
+          return unsignedValue;
+        } catch (e) {}
       } else {
-        result += "%u" + hex(code, 4).toUpperCase();
+        try {
+          let { payload: unsignedValue } = await jose.jwtVerify(
+            value,
+            new TextEncoder().encode(secret)
+          );
+          return unsignedValue;
+        } catch (e) {}
       }
     }
   }
-  return result;
-}
 
-function hex(code: number, length: number): string {
-  let result = code.toString(16);
-  while (result.length < length) result = "0" + result;
-  return result;
-}
-
-// See: https://github.com/zloirock/core-js/blob/master/packages/core-js/modules/es.unescape.js
-function myUnescape(value: string): string {
-  let str = value.toString();
-  let result = "";
-  let index = 0;
-  let chr, part;
-  while (index < str.length) {
-    chr = str.charAt(index++);
-    if (chr === "%") {
-      if (str.charAt(index) === "u") {
-        part = str.slice(index + 1, index + 5);
-        if (/^[\da-f]{4}$/i.exec(part)) {
-          result += String.fromCharCode(parseInt(part, 16));
-          index += 5;
-          continue;
-        }
-      } else {
-        part = str.slice(index, index + 2);
-        if (/^[\da-f]{2}$/i.exec(part)) {
-          result += String.fromCharCode(parseInt(part, 16));
-          index += 2;
-          continue;
-        }
-      }
-    }
-    result += chr;
-  }
-  return result;
+  return jose.UnsecuredJWT.decode(value);
 }
 
 function warnOnceAboutExpiresCookie(name: string, expires?: Date) {

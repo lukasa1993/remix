@@ -60,7 +60,7 @@ export type {
   CookieOptions,
   CookieParseOptions,
   CookieSerializeOptions,
-  CookieSignatureOptions,
+  CookieSecureOptions,
   DataFunctionArgs,
   EntryContext,
   ErrorBoundaryComponent,
