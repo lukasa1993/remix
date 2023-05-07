@@ -94,10 +94,8 @@ export type {
   SessionData,
   SessionIdStorageStrategy,
   SessionStorage,
-  SignFunction,
   TypedDeferredData,
   TypedResponse,
-  UnsignFunction,
   UploadHandler,
   UploadHandlerPart,
 } from "@remix-run/server-runtime";

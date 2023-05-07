@@ -1,0 +1,12 @@
+diff --git a/node_modules/jose/dist/node/cjs/lib/buffer_utils.js b/node_modules/jose/dist/node/cjs/lib/buffer_utils.js
+index 7932178..29e9322 100644
+--- a/node_modules/jose/dist/node/cjs/lib/buffer_utils.js
++++ b/node_modules/jose/dist/node/cjs/lib/buffer_utils.js
+@@ -1,6 +1,7 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.concatKdf = exports.lengthAndInput = exports.uint32be = exports.uint64be = exports.p2s = exports.concat = exports.decoder = exports.encoder = void 0;
++const { TextEncoder, TextDecoder } = require('util');
+ const digest_js_1 = require("../runtime/digest.js");
+ exports.encoder = new TextEncoder();
+ exports.decoder = new TextDecoder();
