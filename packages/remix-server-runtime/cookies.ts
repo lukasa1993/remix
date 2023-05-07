@@ -1,6 +1,6 @@
 import type { CookieParseOptions, CookieSerializeOptions } from "cookie";
 import { parse, serialize } from "cookie";
-import jose from "jose";
+import * as jose from "jose";
 
 import { warnOnce } from "./warnings";
 
@@ -154,18 +154,18 @@ async function encodeCookieValue(
 
   if (secrets.length > 0) {
     if (encrypt) {
-      encoded = await new jose.EncryptJWT(value)
+      encoded = await new jose.EncryptJWT({ value })
         .setProtectedHeader({ alg: "PBES2-HS512+A256KW", enc: "A256GCM" })
         .setIssuedAt()
         .encrypt(new TextEncoder().encode(secrets[0]));
     } else {
-      encoded = await new jose.SignJWT(value)
-        .setProtectedHeader({ alg: "PBES2-HS512+A256KW", enc: "A256GCM" })
+      encoded = await new jose.SignJWT({ value })
+        .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
         .sign(new TextEncoder().encode(secrets[0]));
     }
   } else {
-    encoded = new jose.UnsecuredJWT(value).setIssuedAt().encode();
+    encoded = new jose.UnsecuredJWT({ value }).setIssuedAt().encode();
   }
 
   return encoded;
@@ -184,21 +184,26 @@ async function decodeCookieValue(
             value,
             new TextEncoder().encode(secret)
           );
-          return unsignedValue;
-        } catch (e) {}
+          return unsignedValue.value;
+        } catch (e) {
+        }
       } else {
         try {
           let { payload: unsignedValue } = await jose.jwtVerify(
             value,
             new TextEncoder().encode(secret)
           );
-          return unsignedValue;
-        } catch (e) {}
+
+          return unsignedValue.value;
+        } catch (e) {
+        }
       }
     }
+
+    return null;
   }
 
-  return jose.UnsecuredJWT.decode(value);
+  return jose.UnsecuredJWT.decode(value).payload.value;
 }
 
 function warnOnceAboutExpiresCookie(name: string, expires?: Date) {

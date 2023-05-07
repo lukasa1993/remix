@@ -1,5 +1,4 @@
 import { createCookieFactory } from "../cookies";
-import type { SignFunction, UnsignFunction } from "../crypto";
 import {
   createSession,
   createSessionStorageFactory,
@@ -12,19 +11,7 @@ function getCookieFromSetCookie(setCookie: string): string {
   return setCookie.split(/;\s*/)[0];
 }
 
-const sign: SignFunction = async (value, secret) => {
-  return JSON.stringify({ value, secret });
-};
-const unsign: UnsignFunction = async (signed, secret) => {
-  try {
-    let unsigned = JSON.parse(signed);
-    if (unsigned.secret !== secret) return false;
-    return unsigned.value;
-  } catch (e: unknown) {
-    return false;
-  }
-};
-const createCookie = createCookieFactory({ sign, unsign });
+const createCookie = createCookieFactory();
 const createCookieSessionStorage =
   createCookieSessionStorageFactory(createCookie);
 const createSessionStorage = createSessionStorageFactory(createCookie);
